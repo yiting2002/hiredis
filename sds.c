@@ -48,8 +48,10 @@ static inline int sdsHdrSize(char type) {
             return sizeof(struct sdshdr16);
         case SDS_TYPE_32:
             return sizeof(struct sdshdr32);
+#ifdef _WIN64
         case SDS_TYPE_64:
             return sizeof(struct sdshdr64);
+#endif
     }
     return 0;
 }
@@ -61,9 +63,13 @@ static inline char sdsReqType(size_t string_size) {
         return SDS_TYPE_8;
     if (string_size < 0xffff)
         return SDS_TYPE_16;
+#ifdef _WIN64
     if (string_size < 0xffffffff)
         return SDS_TYPE_32;
     return SDS_TYPE_64;
+#else
+    return SDS_TYPE_32;
+#endif
 }
 
 /* Create a new sds string with the content specified by the 'init' pointer
@@ -120,6 +126,7 @@ sds sdsnewlen(const void *init, size_t initlen) {
             *fp = type;
             break;
         }
+#ifdef _WIN64
         case SDS_TYPE_64: {
             SDS_HDR_VAR(64,s);
             sh->len = initlen;
@@ -127,6 +134,7 @@ sds sdsnewlen(const void *init, size_t initlen) {
             *fp = type;
             break;
         }
+#endif
     }
     if (initlen && init)
         memcpy(s, init, initlen);
@@ -339,12 +347,14 @@ void sdsIncrLen(sds s, int incr) {
             len = (sh->len += incr);
             break;
         }
+#ifdef _WIN64
         case SDS_TYPE_64: {
             SDS_HDR_VAR(64,s);
             assert((incr >= 0 && sh->alloc-sh->len >= (uint64_t)incr) || (incr < 0 && sh->len >= (uint64_t)(-incr)));
             len = (sh->len += incr);
             break;
         }
+#endif
         default: len = 0; /* Just to avoid compilation warnings. */
     }
     s[len] = '\0';

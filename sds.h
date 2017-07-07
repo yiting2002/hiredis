@@ -41,6 +41,10 @@
 
 typedef char *sds;
 
+#ifdef _MSC_VER
+# define __attribute__(x)
+# pragma pack(push, 1)
+#endif
 /* Note: sdshdr5 is never used, we just access the flags byte directly.
  * However is here to document the layout of type 5 SDS strings. */
 struct __attribute__ ((__packed__)) sdshdr5 {
@@ -71,6 +75,9 @@ struct __attribute__ ((__packed__)) sdshdr64 {
     unsigned char flags; /* 3 lsb of type, 5 unused bits */
     char buf[];
 };
+#ifdef _MSC_VER
+# pragma pack(pop)
+#endif
 
 #define SDS_TYPE_5  0
 #define SDS_TYPE_8  1
@@ -94,8 +101,10 @@ static inline size_t sdslen(const sds s) {
             return SDS_HDR(16,s)->len;
         case SDS_TYPE_32:
             return SDS_HDR(32,s)->len;
+#ifdef _WIN64
         case SDS_TYPE_64:
             return SDS_HDR(64,s)->len;
+#endif
     }
     return 0;
 }
@@ -118,10 +127,12 @@ static inline size_t sdsavail(const sds s) {
             SDS_HDR_VAR(32,s);
             return sh->alloc - sh->len;
         }
+#ifdef _WIN64
         case SDS_TYPE_64: {
             SDS_HDR_VAR(64,s);
             return sh->alloc - sh->len;
         }
+#endif
     }
     return 0;
 }
@@ -144,9 +155,11 @@ static inline void sdssetlen(sds s, size_t newlen) {
         case SDS_TYPE_32:
             SDS_HDR(32,s)->len = newlen;
             break;
+#ifdef _WIN64
         case SDS_TYPE_64:
             SDS_HDR(64,s)->len = newlen;
             break;
+#endif
     }
 }
 
@@ -169,9 +182,11 @@ static inline void sdsinclen(sds s, size_t inc) {
         case SDS_TYPE_32:
             SDS_HDR(32,s)->len += inc;
             break;
+#ifdef _WIN64
         case SDS_TYPE_64:
             SDS_HDR(64,s)->len += inc;
             break;
+#endif
     }
 }
 
@@ -187,8 +202,10 @@ static inline size_t sdsalloc(const sds s) {
             return SDS_HDR(16,s)->alloc;
         case SDS_TYPE_32:
             return SDS_HDR(32,s)->alloc;
+#ifdef _WIN64
         case SDS_TYPE_64:
             return SDS_HDR(64,s)->alloc;
+#endif
     }
     return 0;
 }
@@ -208,9 +225,11 @@ static inline void sdssetalloc(sds s, size_t newlen) {
         case SDS_TYPE_32:
             SDS_HDR(32,s)->alloc = newlen;
             break;
+#ifdef _WIN64
         case SDS_TYPE_64:
             SDS_HDR(64,s)->alloc = newlen;
             break;
+#endif
     }
 }
 

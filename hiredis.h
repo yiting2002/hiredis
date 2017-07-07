@@ -35,7 +35,9 @@
 #define __HIREDIS_H
 #include "read.h"
 #include <stdarg.h> /* for va_list */
+#ifndef _MSC_VER
 #include <sys/time.h> /* for struct timeval */
+#endif
 #include <stdint.h> /* uintXX_t, etc */
 #include "sds.h" /* for sds */
 
@@ -131,6 +133,7 @@ int redisFormatSdsCommandArgv(sds *target, int argc, const char ** argv, const s
 void redisFreeCommand(char *cmd);
 void redisFreeSdsCommand(sds cmd);
 
+#ifndef _MSC_VER
 enum redisConnectionType {
     REDIS_CONN_TCP,
     REDIS_CONN_UNIX
@@ -215,6 +218,7 @@ int redisAppendCommandArgv(redisContext *c, int argc, const char **argv, const s
 void *redisvCommand(redisContext *c, const char *format, va_list ap);
 void *redisCommand(redisContext *c, const char *format, ...);
 void *redisCommandArgv(redisContext *c, int argc, const char **argv, const size_t *argvlen);
+#endif  // _MSC_VER
 
 #ifdef __cplusplus
 }

@@ -22,4 +22,34 @@
 #define _OSX
 #endif
 
+#if defined(_MSC_VER)
+
+#ifndef __STDC__
+#define __STDC__ 1
+#endif
+
+#define INCL_WINSOCK_API_PROTOTYPES 1
+#define INCL_WINSOCK_API_TYPEDEFS 0
+#define WIN32_LEAN_AND_MEAN
+#define _WIN32_WINNT 0x0501
+#define _CRT_SECURE_NO_WARNINGS
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <mstcpip.h>
+#include <stdio.h>
+
+#ifndef inline
+#define inline __inline
+#endif
+
+#ifndef va_copy
+#define va_copy(d,s) ((d) = (s))
+#endif
+
+#ifndef snprintf
+#define snprintf _snprintf
+#endif
+
+#endif
+
 #endif

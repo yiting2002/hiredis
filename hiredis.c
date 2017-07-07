@@ -34,13 +34,17 @@
 #include "fmacros.h"
 #include <string.h>
 #include <stdlib.h>
+#ifndef _MSC_VER
 #include <unistd.h>
+#endif
 #include <assert.h>
 #include <errno.h>
 #include <ctype.h>
 
 #include "hiredis.h"
+#ifndef _MSC_VER
 #include "net.h"
+#endif
 #include "sds.h"
 
 static redisReply *createReplyObject(int type);
@@ -569,6 +573,9 @@ void redisFreeCommand(char *cmd) {
     free(cmd);
 }
 
+#ifdef _MSC_VER
+#include "read.c"
+#else
 void __redisSetError(redisContext *c, int type, const char *str) {
     size_t len;
 
@@ -1019,3 +1026,4 @@ void *redisCommandArgv(redisContext *c, int argc, const char **argv, const size_
         return NULL;
     return __redisBlockForReply(c);
 }
+#endif  // _MSC_VER
