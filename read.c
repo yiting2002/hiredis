@@ -46,8 +46,8 @@
 static void __redisReaderSetError(redisReader *r, int type, const char *str) {
     size_t len;
 
-    if (r->reply != NULL && r->fn && r->fn->freeObject) {
-        r->fn->freeObject(r->reply);
+    if (r->reply != NULL) {
+        freeReplyObject(r->reply);
         r->reply = NULL;
     }
 
@@ -220,16 +220,10 @@ static int processLineItem(redisReader *r) {
 
     if ((p = readLine(r,&len)) != NULL) {
         if (cur->type == REDIS_REPLY_INTEGER) {
-            if (r->fn && r->fn->createInteger)
-                obj = r->fn->createInteger(cur,readLongLong(p));
-            else
-                obj = (void*)REDIS_REPLY_INTEGER;
+            obj = createIntegerObject(cur,readLongLong(p));
         } else {
             /* Type will be error or status. */
-            if (r->fn && r->fn->createString)
-                obj = r->fn->createString(cur,p,len);
-            else
-                obj = (void*)(size_t)(cur->type);
+            obj = createStringObject(cur,p,len);
         }
 
         if (obj == NULL) {
@@ -263,19 +257,13 @@ static int processBulkItem(redisReader *r) {
 
         if (len < 0) {
             /* The nil object can always be created. */
-            if (r->fn && r->fn->createNil)
-                obj = r->fn->createNil(cur);
-            else
-                obj = (void*)REDIS_REPLY_NIL;
+            obj = createNilObject(cur);
             success = 1;
         } else {
             /* Only continue when the buffer contains the entire bulk item. */
             bytelen += len+2; /* include \r\n */
             if (r->pos+bytelen <= r->len) {
-                if (r->fn && r->fn->createString)
-                    obj = r->fn->createString(cur,s+2,len);
-                else
-                    obj = (void*)REDIS_REPLY_STRING;
+                obj = createStringObject(cur,s+2,len);
                 success = 1;
             }
         }
@@ -318,10 +306,7 @@ static int processMultiBulkItem(redisReader *r) {
         root = (r->ridx == 0);
 
         if (elements == -1) {
-            if (r->fn && r->fn->createNil)
-                obj = r->fn->createNil(cur);
-            else
-                obj = (void*)REDIS_REPLY_NIL;
+            obj = createNilObject(cur);
 
             if (obj == NULL) {
                 __redisReaderSetErrorOOM(r);
@@ -330,10 +315,7 @@ static int processMultiBulkItem(redisReader *r) {
 
             moveToNextTask(r);
         } else {
-            if (r->fn && r->fn->createArray)
-                obj = r->fn->createArray(cur,elements);
-            else
-                obj = (void*)REDIS_REPLY_ARRAY;
+            obj = createArrayObject(cur,elements);
 
             if (obj == NULL) {
                 __redisReaderSetErrorOOM(r);
@@ -350,7 +332,6 @@ static int processMultiBulkItem(redisReader *r) {
                 r->rstack[r->ridx].idx = 0;
                 r->rstack[r->ridx].obj = NULL;
                 r->rstack[r->ridx].parent = cur;
-                r->rstack[r->ridx].privdata = r->privdata;
             } else {
                 moveToNextTask(r);
             }
@@ -413,7 +394,7 @@ static int processItem(redisReader *r) {
     }
 }
 
-redisReader *redisReaderCreateWithFunctions(redisReplyObjectFunctions *fn) {
+redisReader *redisReaderCreate(void) {
     redisReader *r;
 
     r = calloc(sizeof(redisReader),1);
@@ -422,9 +403,7 @@ redisReader *redisReaderCreateWithFunctions(redisReplyObjectFunctions *fn) {
 
     r->err = 0;
     r->errstr[0] = '\0';
-    r->fn = fn;
     r->buf = sdsempty();
-    r->maxbuf = REDIS_READER_MAX_BUF;
     if (r->buf == NULL) {
         free(r);
         return NULL;
@@ -435,8 +414,8 @@ redisReader *redisReaderCreateWithFunctions(redisReplyObjectFunctions *fn) {
 }
 
 void redisReaderFree(redisReader *r) {
-    if (r->reply != NULL && r->fn && r->fn->freeObject)
-        r->fn->freeObject(r->reply);
+    if (r->reply != NULL)
+        freeReplyObject(r->reply);
     if (r->buf != NULL)
         sdsfree(r->buf);
     free(r);
@@ -452,7 +431,7 @@ int redisReaderFeed(redisReader *r, const char *buf, size_t len) {
     /* Copy the provided buffer. */
     if (buf != NULL && len >= 1) {
         /* Destroy internal buffer when it is empty and is quite large. */
-        if (r->len == 0 && r->maxbuf != 0 && sdsavail(r->buf) > r->maxbuf) {
+        if (r->len == 0 && sdsavail(r->buf) > REDIS_READER_MAX_BUF) {
             sdsfree(r->buf);
             r->buf = sdsempty();
             r->pos = 0;
@@ -494,7 +473,6 @@ int redisReaderGetReply(redisReader *r, void **reply) {
         r->rstack[0].idx = -1;
         r->rstack[0].obj = NULL;
         r->rstack[0].parent = NULL;
-        r->rstack[0].privdata = r->privdata;
         r->ridx = 0;
     }
 
