@@ -131,6 +131,7 @@ redisReader *redisReaderCreate(void);
 /* Function to free the reply objects hiredis returns by default. */
 void freeReplyObject(void *reply);
 
+#ifndef _MSC_VER
 /* Functions to format a command according to the protocol. */
 int redisvFormatCommand(char **target, const char *format, va_list ap);
 int redisFormatCommand(char **target, const char *format, ...);
@@ -139,7 +140,6 @@ int redisFormatSdsCommandArgv(sds *target, int argc, const char ** argv, const s
 void redisFreeCommand(char *cmd);
 void redisFreeSdsCommand(sds cmd);
 
-#ifndef _MSC_VER
 enum redisConnectionType {
     REDIS_CONN_TCP,
     REDIS_CONN_UNIX
@@ -224,6 +224,12 @@ int redisAppendCommandArgv(redisContext *c, int argc, const char **argv, const s
 void *redisvCommand(redisContext *c, const char *format, va_list ap);
 void *redisCommand(redisContext *c, const char *format, ...);
 void *redisCommandArgv(redisContext *c, int argc, const char **argv, const size_t *argvlen);
+#else
+/* Context for a connection to Redis */
+typedef struct redisContext {
+    int err; /* Error flags, 0 when there is no error */
+    char errstr[128]; /* String representation of error when applicable */
+} redisContext;
 #endif  // _MSC_VER
 
 #ifdef __cplusplus

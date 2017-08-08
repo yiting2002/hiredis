@@ -59,7 +59,7 @@ static redisReply *createReplyObject(int type) {
 }
 
 /* Free a reply object */
-void freeReplyObject(void *reply) {
+static void freeReplyObject(void *reply) {
     redisReply *r = reply;
     size_t j;
 
@@ -176,6 +176,12 @@ static void *createNilObject(const redisReadTask *task) {
     return r;
 }
 
+#ifdef _MSC_VER
+#include "read.c"
+#include "_hiredis.c"
+#include "_async.c"
+#include "_ae.c"
+#else
 /* Return the number of digits of 'v' when converted to string in radix 10.
  * Implementation borrowed from link in redis/src/util.c:string2ll(). */
 static uint32_t countDigits(uint64_t v) {
@@ -557,9 +563,6 @@ void redisFreeCommand(char *cmd) {
     free(cmd);
 }
 
-#ifdef _MSC_VER
-#include "read.c"
-#else
 void __redisSetError(redisContext *c, int type, const char *str) {
     size_t len;
 
