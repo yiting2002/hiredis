@@ -69,7 +69,7 @@ static void __redisReaderSetError(redisReader *r, int type, const char *str) {
     r->errstr[len] = '\0';
 }
 
-static size_t chrtos(char *buf, size_t size, char byte) {
+static inline size_t chrtos(char *buf, size_t size, char byte) {
     size_t len = 0;
 
     switch(byte) {
@@ -106,7 +106,7 @@ static void __redisReaderSetErrorOOM(redisReader *r) {
     __redisReaderSetError(r,REDIS_ERR_OOM,"Out of memory");
 }
 
-static char *readBytes(redisReader *r, unsigned int bytes) {
+static inline char *readBytes(redisReader *r, unsigned int bytes) {
     char *p;
     if (r->len-r->pos >= bytes) {
         p = r->buf+r->pos;
@@ -212,7 +212,7 @@ static void moveToNextTask(redisReader *r) {
     }
 }
 
-static int processLineItem(redisReader *r) {
+static inline int processLineItem(redisReader *r) {
     redisReadTask *cur = &(r->rstack[r->ridx]);
     void *obj;
     char *p;
@@ -240,7 +240,7 @@ static int processLineItem(redisReader *r) {
     return REDIS_ERR;
 }
 
-static int processBulkItem(redisReader *r) {
+static inline int processBulkItem(redisReader *r) {
     redisReadTask *cur = &(r->rstack[r->ridx]);
     void *obj = NULL;
     char *p, *s;
@@ -287,7 +287,7 @@ static int processBulkItem(redisReader *r) {
     return REDIS_ERR;
 }
 
-static int processMultiBulkItem(redisReader *r) {
+static inline int processMultiBulkItem(redisReader *r) {
     redisReadTask *cur = &(r->rstack[r->ridx]);
     void *obj;
     char *p;
@@ -345,7 +345,7 @@ static int processMultiBulkItem(redisReader *r) {
     return REDIS_ERR;
 }
 
-static int processItem(redisReader *r) {
+static inline int processItem(redisReader *r) {
     redisReadTask *cur = &(r->rstack[r->ridx]);
     char *p;
 

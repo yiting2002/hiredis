@@ -54,7 +54,7 @@ typedef struct redisCallbackList {
 
 /* Server node data */
 typedef struct redisNode {
-    struct redisNode *next;
+    struct redisNode *next;	/* simple singly linked list */
     int retry_count;
     int addrlen;
     SOCKADDR_INET addr;

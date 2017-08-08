@@ -5,6 +5,11 @@ VisualStudioVersion = 14.0.25420.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "hiredis", "hiredis.vc2015.vcxproj", "{030DF39D-7FB7-4A89-98D7-C2E688DF66FA}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "example", "example.vc2015.vcxproj", "{2A62E238-CBEF-401C-9E3E-EB95548262F5}"
+	ProjectSection(ProjectDependencies) = postProject
+		{030DF39D-7FB7-4A89-98D7-C2E688DF66FA} = {030DF39D-7FB7-4A89-98D7-C2E688DF66FA}
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -21,6 +26,14 @@ Global
 		{030DF39D-7FB7-4A89-98D7-C2E688DF66FA}.Release|x64.Build.0 = Release|x64
 		{030DF39D-7FB7-4A89-98D7-C2E688DF66FA}.Release|x86.ActiveCfg = Release|Win32
 		{030DF39D-7FB7-4A89-98D7-C2E688DF66FA}.Release|x86.Build.0 = Release|Win32
+		{2A62E238-CBEF-401C-9E3E-EB95548262F5}.Debug|x64.ActiveCfg = Debug|x64
+		{2A62E238-CBEF-401C-9E3E-EB95548262F5}.Debug|x64.Build.0 = Debug|x64
+		{2A62E238-CBEF-401C-9E3E-EB95548262F5}.Debug|x86.ActiveCfg = Debug|Win32
+		{2A62E238-CBEF-401C-9E3E-EB95548262F5}.Debug|x86.Build.0 = Debug|Win32
+		{2A62E238-CBEF-401C-9E3E-EB95548262F5}.Release|x64.ActiveCfg = Release|x64
+		{2A62E238-CBEF-401C-9E3E-EB95548262F5}.Release|x64.Build.0 = Release|x64
+		{2A62E238-CBEF-401C-9E3E-EB95548262F5}.Release|x86.ActiveCfg = Release|Win32
+		{2A62E238-CBEF-401C-9E3E-EB95548262F5}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
