@@ -128,6 +128,7 @@ static inline redisAsyncContext *redisAsyncContextInit(void) {
         return NULL;
 
     ac->fd = INVALID_SOCKET;
+    ac->flags |= REDIS_BLOCK;
 
     return ac;
 }
@@ -137,7 +138,7 @@ static inline void redisAsyncContextFree(redisAsyncContext *ac) {
     redisNode *node, *pn;
     redisCallback *cb, *pc;
 
-    ac->flags |= REDIS_IN_CALLBACK;
+    ac->flags |= (REDIS_IN_CALLBACK|REDIS_DISCONNECTING|REDIS_FREEING);
 
     /* Execute pending callbacks with NULL reply. */
     cb = ac->replies.head;
@@ -151,6 +152,11 @@ static inline void redisAsyncContextFree(redisAsyncContext *ac) {
         free(pc);
     }
 
+    if (ac->obuf != NULL)
+        sdsfree(ac->obuf);
+    if (ac->reader != NULL)
+        redisReaderFree(ac->reader);
+
     /* Execute disconnect callback. When redisAsyncFree() initiated destroying
      * this context, the status will always be REDIS_OK. */
     if ((ac->flags & REDIS_CONNECTED) == 0) {
@@ -160,11 +166,6 @@ static inline void redisAsyncContextFree(redisAsyncContext *ac) {
         if (ac->onDisconnect != NULL)
             ac->onDisconnect(ac,(ac->err == 0) ? REDIS_OK : REDIS_ERR);
     }
-
-    if (ac->obuf != NULL)
-        sdsfree(ac->obuf);
-    if (ac->reader != NULL)
-        redisReaderFree(ac->reader);
 
     node = ac->nodes;
     while (node != NULL) {
@@ -269,21 +270,24 @@ retry:
 
     ac->eventData = fe;
     ac->fd = s;
+    ac->flags |= REDIS_BLOCK;
     fe->mask |= AEM_CONNECTING;
-    __redisSetError(ac, REDIS_OK, NULL);
+    __redisSetError(ac,REDIS_OK,NULL);
     return REDIS_OK;
 }
 
 /* Helper function to make the disconnect happen and clean up. */
 static void __redisAsyncDisconnect(aeEventLoop *el, redisAsyncContext *ac) {
     redisCallback *cb, *pc;
+    int flags;
 
-    if ((ac->flags & REDIS_CONNECTED) != 0) {
+    flags = ac->flags;
+    if ((flags & (REDIS_CONNECTED|REDIS_FREEING)) != 0) {
         /* Execute pending callbacks with NULL reply. */
         cb = ac->replies.head;
         ac->replies.head = NULL;
         ac->replies.tail = NULL;
-        ac->flags |= REDIS_IN_CALLBACK;
+        ac->flags |= (REDIS_IN_CALLBACK|REDIS_BLOCK);
         while (cb != NULL) {
             if (cb->fn != NULL)
                 cb->fn(ac, NULL, cb->privdata);
@@ -291,7 +295,8 @@ static void __redisAsyncDisconnect(aeEventLoop *el, redisAsyncContext *ac) {
             cb = cb->next;
             free(pc);
         }
-        ac->flags &= ~REDIS_IN_CALLBACK;
+        if ((flags & REDIS_IN_CALLBACK) == 0)
+            ac->flags &= ~REDIS_IN_CALLBACK;
 
         if (ac->obuf != NULL) {
             sdsfree(ac->obuf);
@@ -303,19 +308,20 @@ static void __redisAsyncDisconnect(aeEventLoop *el, redisAsyncContext *ac) {
         }
     }
 
-    /* Signal event lib to clean up */
     if (ac->eventData != NULL) {
         aeDeleteFileEvent(el, ac->eventData);
         closesocket(ac->fd);
         ac->fd = INVALID_SOCKET;
         ac->eventData = NULL;
 
-        if ((ac->flags & REDIS_DISCONNECTING) == 0 &&
-            __redisAsyncConnect(el, ac) == REDIS_OK)
-        {
-            return;
+        if ((ac->flags & REDIS_DISCONNECTING) == 0 || ac->replies.head != NULL) {
+            if (__redisAsyncConnect(el, ac) == REDIS_OK)
+                return;
         }
     }
+
+    if ((flags & REDIS_IN_CALLBACK) != 0)
+        return;
 
     /* Cleanup self */
     redisAsyncContextFree(ac);
@@ -329,7 +335,10 @@ static void __redisAsyncDisconnect(aeEventLoop *el, redisAsyncContext *ac) {
  * when there are no pending callbacks. */
 void redisAsyncDisconnect(redisAsyncContext *ac) {
     ac->flags |= REDIS_DISCONNECTING;
-    if ((ac->flags & REDIS_IN_CALLBACK) == 0 && ac->eventData == NULL && ac->replies.head == NULL)
+    if ((ac->flags & REDIS_IN_CALLBACK) != 0)
+        return;
+
+    if (ac->eventData == NULL && ac->replies.head == NULL)
         __redisAsyncDisconnect(NULL, ac);
 }
 
@@ -419,13 +428,6 @@ static inline int redisAsyncHandleConnect(redisAsyncContext *ac) {
     redisNode *node;
     aeFileEvent *fe;
 
-    /* reset retry counter */
-    node = ac->nodes;
-    while (node != NULL) {
-        node->retry_count = 0;
-        node = node->next;
-    }
-
     /*if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, (char*)&err, &errlen) == -1) {
         __redisSetErrorFromErrno(c,REDIS_ERR_IO,"getsockopt(SO_ERROR)");
         return REDIS_ERR;
@@ -453,12 +455,25 @@ static inline int redisAsyncHandleConnect(redisAsyncContext *ac) {
     /* Mark context as connected. */
     if ((ac->flags & REDIS_CONNECTED) == 0) {
         ac->flags |= REDIS_CONNECTED;
-        if (ac->onConnect != NULL)
-            ac->onConnect(ac,REDIS_OK);
+        if (ac->onConnect != NULL) {
+            ac->flags |= REDIS_IN_CALLBACK;
+            ac->onConnect(ac, REDIS_OK);
+            ac->flags &= ~REDIS_IN_CALLBACK;
+
+            if (ac->eventData == NULL)
+                return REDIS_ERR;
+        }
     }
 
     if (redisAsyncHandleWrite(ac) != REDIS_OK)
         return REDIS_ERR;
+
+    /* reset retry counter */
+    node = ac->nodes;
+    while (node != NULL) {
+        node->retry_count = 0;
+        node = node->next;
+    }
 
     return REDIS_OK;
 }
@@ -502,6 +517,8 @@ static int redisAsyncHandleRead(redisAsyncContext *ac) {
     /* Return early when the context has seen an error. */
     if (ac->err != 0)
         goto error;
+    if ((ac->flags & REDIS_DISCONNECTING) != 0 && ac->replies.head == NULL)
+        goto error;
 
     /* queue read event */
     ZeroMemory(&fe->r_ov, sizeof(fe->r_ov));
@@ -518,7 +535,6 @@ static int redisAsyncHandleRead(redisAsyncContext *ac) {
     return REDIS_OK;
 error:
     /* free read event */
-    ac->flags &= ~REDIS_FREEING;
     fe->r_buf = NULL;
     free(buf);
     return REDIS_ERR;
@@ -559,6 +575,8 @@ static int redisAsyncHandleWrite(redisAsyncContext *ac) {
     /* Return early when the context has seen an error. */
     if (ac->err != 0)
         goto error;
+    if ((ac->flags & REDIS_DISCONNECTING) != 0 && ac->replies.head == NULL)
+        goto error;
 
     buf = ac->obuf;
     if (buf != NULL) {
@@ -575,15 +593,14 @@ static int redisAsyncHandleWrite(redisAsyncContext *ac) {
             __redisSetErrorFromErrno(ac,REDIS_ERR_IO,"WSASend()");
             goto error;
         }
-        ac->flags &= ~REDIS_FREEING;
+        ac->flags |= REDIS_BLOCK;
     } else {
-        ac->flags |= REDIS_FREEING;
+        ac->flags &= ~REDIS_BLOCK;
     }
 
     return REDIS_OK;
 error:
     /* free write event */
-    ac->flags &= ~REDIS_FREEING;
     if (buf != NULL) {
         fe->w_buf = NULL;
         sdsfree(buf);
@@ -597,10 +614,6 @@ error:
 static int __redisAsyncCommand(redisAsyncContext *ac, redisCallbackFn *fn, void *privdata) {
     aeFileEvent *fe;
     redisCallback *cb;
-
-    /* Don't accept new commands when the connection is about to be closed. */
-    if (ac->flags & REDIS_DISCONNECTING)
-        return REDIS_ERR;
 
     /* Setup callback */
     cb = malloc(sizeof(redisCallback));
@@ -620,8 +633,8 @@ static int __redisAsyncCommand(redisAsyncContext *ac, redisCallbackFn *fn, void 
     ac->replies.tail = cb;
 
     /* Always schedule a write when the write buffer is non-empty */
-    if ((ac->flags & REDIS_FREEING) != 0) {
-        ac->flags &= ~REDIS_FREEING;
+    if ((ac->flags & REDIS_BLOCK) == 0) {
+        ac->flags |= REDIS_BLOCK;
         fe = ac->eventData;
         if (PostQueuedCompletionStatus(fe->iocp,0,(ULONG_PTR)fe,&fe->w_ov) == FALSE) {
             __redisSetError(ac,REDIS_ERR_IO,"PostQueuedCompletionStatus()");
@@ -633,6 +646,9 @@ static int __redisAsyncCommand(redisAsyncContext *ac, redisCallbackFn *fn, void 
 }
 
 int redisAsyncCommandArgv(redisAsyncContext *ac, redisCallbackFn *fn, void *privdata, int argc, const char **argv) {
+    /* Don't accept new commands when the connection is about to be closed. */
+    if ((ac->flags & REDIS_DISCONNECTING) != 0)
+        return REDIS_ERR;
 
     if (redisFormatSdsCommandArgv(&ac->obuf, argc, argv) < 0) {
         __redisSetError(ac,REDIS_ERR_OOM,"Out of memory");
@@ -644,6 +660,10 @@ int redisAsyncCommandArgv(redisAsyncContext *ac, redisCallbackFn *fn, void *priv
 
 int redisAsyncFormattedCommand(redisAsyncContext *ac, redisCallbackFn *fn, void *privdata, const char *cmd) {
     sds newbuf;
+
+    /* Don't accept new commands when the connection is about to be closed. */
+    if ((ac->flags & REDIS_DISCONNECTING) != 0)
+        return REDIS_ERR;
 
     newbuf = ac->obuf;
     if (newbuf == NULL)
@@ -682,6 +702,6 @@ void redisAeDetach(aeEventLoop *el, redisAsyncContext *ac) {
     ac->onConnect = NULL;
     ac->onDisconnect = NULL;
 
-    redisAsyncDisconnect(ac);
+    ac->flags |= (REDIS_DISCONNECTING|REDIS_FREEING);
     __redisAsyncDisconnect(el, ac);
 }
